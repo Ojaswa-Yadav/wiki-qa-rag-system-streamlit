@@ -38,11 +38,16 @@ class EnhancedQARAGSystem:
         self.active_learning_queue = []
 
         # Initialize Pinecone
-        pinecone.init(api_key="YOUR_PINECONE_API_KEY", environment="YOUR_PINECONE_ENVIRONMENT")
+        pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
         self.index_name = "wiki-qa-index"
-        if self.index_name not in pinecone.list_indexes():
-            pinecone.create_index(self.index_name, dimension=768)  # 768 is the dimension for 'paraphrase-multilingual-mpnet-base-v2'
-        self.pinecone_index = pinecone.Index(self.index_name)
+        if self.index_name not in pc.list_indexes().names():
+            pc.create_index(
+                name=self.index_name,# 768 is the dimension for 'paraphrase-multilingual-mpnet-base-v2'
+                dimension=768,
+                metric='cosine'
+            )
+        self.index = pc.Index(self.index_name)
+        
 
     def load_dataset(self, dataset_name='wiki_qa', split='train', question_column='question', 
                      context_column='answer', max_samples=None):
@@ -72,8 +77,11 @@ class EnhancedQARAGSystem:
             return None, None
 
     def build_index(self, ids, embeddings):
-        vectors = list(zip(ids, embeddings, [{"text": doc} for doc in self.documents]))
-        self.pinecone_index.upsert(vectors=vectors)
+        vectors = [
+            (str(id), embedding, {"text": doc}) 
+            for id, embedding, doc in zip(ids, embeddings, self.documents)
+        ]
+        self.index.upsert(vectors=vectors)
 
     def detect_language(self, text):
         return detect(text)
@@ -90,8 +98,8 @@ class EnhancedQARAGSystem:
 
     def semantic_search(self, query, k=5):
         query_vector = self.sbert_model.encode([query])[0].tolist()
-        results = self.pinecone_index.query(query_vector, top_k=k, include_metadata=True)
-        return [(match['metadata']['text'], float(match['score'])) for match in results['matches']]
+        results = self.index.query(vector=query_vector, top_k=k, include_metadata=True)
+        return [(match.metadata['text'], float(match.score)) for match in results.matches]
 
     def extract_answer(self, question, context):
         try:
