@@ -49,20 +49,24 @@ def display_chat_message(content, is_user=False):
 
 @st.cache_resource
 def initialize_system():
-    system = EnhancedQARAGSystem()
-    num_docs = system.load_dataset(max_samples=10000)  # Limit to 10,000 documents
-    st.write(f"Loaded {num_docs} documents from Wiki QA dataset")
-    
-    ids, embeddings = system.encode_documents()
-    system.build_index(ids, embeddings)
-    st.write("Index built successfully")
-    return system
+    try:
+        system = EnhancedQARAGSystem()
+        num_docs = system.load_dataset(max_samples=10000)  # Limit to 10,000 documents
+        st.write(f"Loaded {num_docs} documents from Wiki QA dataset")
+        return system
+    except ValueError as e:
+        st.error(f"Error initializing system: {str(e)}")
+        return None
 
 # Initialize system
 system = initialize_system()
 
 def main():
     st.title("Multilingual Wiki QA System with Active Learning")
+
+    if system is None:
+        st.error("System initialization failed. Please check your Pinecone API key and try again.")
+        return
 
     # Dataset exploration
     st.header("Explore Wiki QA Dataset")
