@@ -16,3 +16,4 @@ langdetect
 scipy
 protobuf
 sentencepiece
+pinecone-client
