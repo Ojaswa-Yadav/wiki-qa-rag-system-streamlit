@@ -1,4 +1,5 @@
-import torch
+import os
+from pinecone import Pineconeimport torch
 import sentencepiece
 from datasets import load_dataset
 from sentence_transformers import SentenceTransformer
