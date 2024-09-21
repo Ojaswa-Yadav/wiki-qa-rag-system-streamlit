@@ -40,7 +40,7 @@ class EnhancedQARAGSystem:
         self.active_learning_queue = []
 
         # Initialize Pinecone
-        pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
+        pc = Pinecone(api_key=os.environ.get("e73b349f-e1ab-4196-8f14-8d06de9f6ece"))
         self.index_name = "wiki-qa-index"
         if self.index_name not in pc.list_indexes().names():
             pc.create_index(
