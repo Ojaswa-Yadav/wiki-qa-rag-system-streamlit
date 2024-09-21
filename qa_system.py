@@ -3,7 +3,6 @@ from datasets import load_dataset
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
-from transformers import AutoTokenizer, AutoModelForQuestionAnswering, M2M100ForConditionalGeneration, M2M100Tokenizer
 from tqdm import tqdm
 from functools import lru_cache
 from rouge_score import rouge_scorer
@@ -13,6 +12,7 @@ import logging
 from langdetect import detect
 from scipy.spatial.distance import cosine
 import pinecone
+from transformers import AutoTokenizer, AutoModelForQuestionAnswering, M2M100ForConditionalGeneration, M2M100Tokenizer, TrainingArguments, Trainer
 
 nltk.download('punkt', quiet=True)
 
@@ -194,9 +194,44 @@ class EnhancedQARAGSystem:
         }
 
     def fine_tune(self, train_dataset, eval_dataset, output_dir="./fine_tuned_model"):
-        # This is a placeholder for fine-tuning logic
-        # Actual implementation would depend on specific requirements and model architecture
-        logging.info("Fine-tuning not implemented in this demo version.")
-        pass
+        # Prepare the datasets
+        train_encodings = self.lm_tokenizer(train_dataset["input_text"], truncation=True, padding=True)
+        eval_encodings = self.lm_tokenizer(eval_dataset["input_text"], truncation=True, padding=True)
 
-# You can add any helper functions here if needed
+        train_dataset = torch.utils.data.TensorDataset(torch.tensor(train_encodings["input_ids"]), torch.tensor(train_encodings["attention_mask"]))
+        eval_dataset = torch.utils.data.TensorDataset(torch.tensor(eval_encodings["input_ids"]), torch.tensor(eval_encodings["attention_mask"]))
+
+        # Define training arguments
+        training_args = TrainingArguments(
+            output_dir=output_dir,
+            num_train_epochs=3,
+            per_device_train_batch_size=8,
+            per_device_eval_batch_size=8,
+            warmup_steps=500,
+            weight_decay=0.01,
+            logging_dir='./logs',
+        )
+
+        # Initialize Trainer
+        trainer = Trainer(
+            model=self.lm_model,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset
+        )
+
+        # Fine-tune the model
+        trainer.train()
+
+        # Save the fine-tuned model
+        self.lm_model.save_pretrained(output_dir)
+        self.lm_tokenizer.save_pretrained(output_dir)
+        print(f"Model fine-tuned and saved to {output_dir}")
+        self.lm_model = M2M100ForConditionalGeneration.from_pretrained(output_dir)
+        self.lm_tokenizer = M2M100Tokenizer.from_pretrained(output_dir)
+
+        print("Fine-tuned model and tokenizer loaded and ready for use.")
+
+
+
+
