@@ -7,3 +7,11 @@ datasets
 tqdm
 rouge-score
 nltk
+pinecone-client
+altair
+pandas
+numpy
+scikit-learn
+langdetect
+scipy
+protobuf
