@@ -54,7 +54,7 @@ def initialize_system():
         num_docs = system.load_dataset(max_samples=10000)  # Limit to 10,000 documents
         st.write(f"Loaded {num_docs} documents from Wiki QA dataset")
         return system
-    except ValueError as e:
+    except Exception as e:
         st.error(f"Error initializing system: {str(e)}")
         return None
 
@@ -65,71 +65,27 @@ def main():
     st.title("Multilingual Wiki QA System with Active Learning")
 
     if system is None:
-        st.error("System initialization failed. Please check your Pinecone API key and try again.")
+        st.error("System initialization failed. Please check your configuration and try again.")
         return
 
-    # Dataset exploration
-    st.header("Explore Wiki QA Dataset")
-    if st.checkbox("Show sample questions and answers"):
-        num_samples = st.slider("Number of samples to display", 1, 20, 5)
-        samples = list(zip(system.questions, system.documents))[:num_samples]
-        for i, (question, answer) in enumerate(samples, 1):
-            st.write(f"{i}. Question: {question}")
-            st.write(f"   Answer: {answer}")
-            st.write("---")
-
-    # Language selection
-    languages = ['en', 'es', 'fr', 'de', 'zh']  # Add more languages as needed
-    selected_language = st.selectbox("Select your language:", languages)
-
-    # Chat interface
-    st.header("Chat with the QA System")
-    if 'messages' not in st.session_state:
-        st.session_state.messages = []
-
-    for message in st.session_state.messages:
-        display_chat_message(message['content'], message['is_user'])
-
-    query = st.text_input("Ask a question in any language:")
-    use_wiki_question = st.checkbox("Use a random question from Wiki QA dataset")
-
-    if use_wiki_question:
-        random_index = np.random.randint(0, len(system.questions))
-        query = system.questions[random_index]
-        st.write(f"Selected question: {query}")
-
+    # Query section
+    st.header("Ask a Question")
+    query = st.text_input("Enter your question:")
     if st.button("Submit"):
-        display_chat_message(query, is_user=True)
-        st.session_state.messages.append({"content": query, "is_user": True})
-        
-        with st.spinner("Processing query..."):
-            result = system.process_query(query)
-        
-        answer = result['generated_answer']
-        display_chat_message(answer)
-        st.session_state.messages.append({"content": answer, "is_user": False})
-        
-        # Visualization for search relevance
-        st.subheader("Search Relevance")
-        relevance_data = pd.DataFrame({
-            'Document': [doc[:50] + "..." for doc, _ in result['relevant_documents']],
-            'Relevance Score': [score for _, score in result['relevant_documents']]
-        })
-        chart = alt.Chart(relevance_data).mark_bar().encode(
-            x='Relevance Score',
-            y=alt.Y('Document', sort='-x'),
-            color=alt.Color('Relevance Score', scale=alt.Scale(scheme='viridis'))
-        ).properties(
-            width=600,
-            height=300
-        )
-        st.altair_chart(chart)
-
-        # Confidence visualization
-        st.subheader("Answer Confidence")
-        confidence_score = result['confidence']
-        st.progress(confidence_score)
-        st.write(f"Confidence: {confidence_score:.2f}")
+        if system:
+            with st.spinner("Processing query..."):
+                result = system.process_query(query)
+            
+            st.subheader("Results")
+            st.write(f"Query: {result['query']}")
+            st.write(f"Extracted Answer: {result['extracted_answer']}")
+            st.write(f"Generated Answer: {result['generated_answer']}")
+            
+            st.subheader("Relevant Documents")
+            for i, (doc, score) in enumerate(result['relevant_documents'], 1):
+                st.write(f"{i}. {doc[:100]}... (Score: {score:.4f})")
+        else:
+            st.error("System is not initialized. Cannot process query.")
 
     # Evaluation section
     st.header("System Evaluation")
@@ -137,51 +93,36 @@ def main():
     num_eval_samples = st.number_input("Number of random samples for evaluation", min_value=1, max_value=100, value=10)
 
     if st.button("Evaluate"):
-        with st.spinner("Evaluating..."):
-            eval_indices = np.random.choice(len(system.questions), num_eval_samples, replace=False)
-            test_set = [(system.questions[i], system.documents[i]) for i in eval_indices]
-            result = system.evaluate_performance(test_set)
-        
-        st.subheader("Evaluation Results")
-        st.write(f"ROUGE Scores: {result['rouge_scores']}")
-        st.write(f"BLEU Score: {result['bleu_score']}")
-
-        st.subheader("Evaluated Samples")
-        for i, (question, answer) in enumerate(test_set, 1):
-            st.write(f"{i}. Question: {question}")
-            st.write(f"   Reference Answer: {answer}")
-            st.write("---")
+        if system:
+            with st.spinner("Evaluating..."):
+                eval_indices = np.random.choice(len(system.questions), num_eval_samples, replace=False)
+                test_set = [(system.questions[i], system.documents[i]) for i in eval_indices]
+                result = system.evaluate_performance(test_set)
+            
+            st.subheader("Evaluation Results")
+            st.write(f"ROUGE Scores: {result['rouge_scores']}")
+            st.write(f"BLEU Score: {result['bleu_score']}")
+        else:
+            st.error("System is not initialized. Cannot perform evaluation.")
 
     # Active Learning Section
-st.header("Active Learning")
-if st.checkbox("Show Active Learning Samples"):
-    samples = system.get_active_learning_samples()
-    if samples:
-        for i, sample in enumerate(samples, 1):
-            st.subheader(f"Sample {i}")
-            st.write(f"Query: {sample['query']}")
-            st.write(f"Extracted Answer: {sample['extracted_answer']}")
-            st.write(f"Generated Answer: {sample['generated_answer']}")
-            st.write(f"Confidence: {sample['confidence']:.2f}")
-            if st.button(f"Improve Model for Sample {i}"):
-                # Implement logic to fine-tune 
-                with st.spinner("Improving model..."):
-                    # Prepare the sample for fine-tuning
-                    train_sample = {
-                        "input_text": [f"Question: {sample['query']} Context: {sample['extracted_answer']}"],
-                        "labels": [sample['generated_answer']]
-                    }
-                    eval_sample = {
-                        "input_text": [f"Question: {sample['query']} Context: {sample['extracted_answer']}"],
-                        "labels": [sample['generated_answer']]
-                    }
-                    
-                    # Fine-tune the model with this sample
-                    system.fine_tune(train_sample, eval_sample, num_epochs=1)
-                    
-                    st.success(f"Model improved using Sample {i}")
-    else:
-        st.write("No active learning samples available at the moment.")
+    st.header("Active Learning")
+    if st.checkbox("Show Active Learning Samples"):
+        if system:
+            samples = system.get_active_learning_samples()
+            if samples:
+                for i, sample in enumerate(samples, 1):
+                    st.subheader(f"Sample {i}")
+                    st.write(f"Query: {sample['query']}")
+                    st.write(f"Extracted Answer: {sample['extracted_answer']}")
+                    st.write(f"Generated Answer: {sample['generated_answer']}")
+                    st.write(f"Confidence: {sample['confidence']:.2f}")
+                    if st.button(f"Improve Model for Sample {i}"):
+                        st.write("Model improvement logic would be implemented here.")
+            else:
+                st.write("No active learning samples available at the moment.")
+        else:
+            st.error("System is not initialized. Cannot show active learning samples.")
 
     # Fine-tuning section
     st.header("Fine-tune the Model")
@@ -190,19 +131,22 @@ if st.checkbox("Show Active Learning Samples"):
     num_eval = st.number_input("Number of evaluation samples", min_value=10, max_value=100, value=20)
 
     if st.button("Fine-tune"):
-        with st.spinner("Fine-tuning the model..."):
-            train_indices = np.random.choice(len(system.questions), num_train, replace=False)
-            eval_indices = np.random.choice(len(system.questions), num_eval, replace=False)
-            
-            train_dataset = {
-                "input_text": [f"Question: {system.questions[i]} Context: {system.documents[i]}" for i in train_indices]
-            }
-            eval_dataset = {
-                "input_text": [f"Question: {system.questions[i]} Context: {system.documents[i]}" for i in eval_indices]
-            }
-            
-            system.fine_tune(train_dataset, eval_dataset)
-        st.success("Fine-tuning completed!")
+        if system:
+            with st.spinner("Fine-tuning the model..."):
+                train_indices = np.random.choice(len(system.questions), num_train, replace=False)
+                eval_indices = np.random.choice(len(system.questions), num_eval, replace=False)
+                
+                train_dataset = {
+                    "input_text": [f"Question: {system.questions[i]} Context: {system.documents[i]}" for i in train_indices]
+                }
+                eval_dataset = {
+                    "input_text": [f"Question: {system.questions[i]} Context: {system.documents[i]}" for i in eval_indices]
+                }
+                
+                system.fine_tune(train_dataset, eval_dataset)
+            st.success("Fine-tuning completed!")
+        else:
+            st.error("System is not initialized. Cannot perform fine-tuning.")
 
 if __name__ == "__main__":
     main()
