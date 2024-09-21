@@ -40,15 +40,22 @@ class EnhancedQARAGSystem:
         self.active_learning_queue = []
 
         # Initialize Pinecone
-        pc = Pinecone(api_key=os.environ.get("e73b349f-e1ab-4196-8f14-8d06de9f6ece"))
-        self.index_name = "wiki-qa-index"
-        if self.index_name not in pc.list_indexes().names():
-            pc.create_index(
-                name=self.index_name,# 768 is the dimension for 'paraphrase-multilingual-mpnet-base-v2'
-                dimension=768,
-                metric='cosine'
-            )
-        self.index = pc.Index(self.index_name)
+        pinecone_api_key = os.environ.get("PINECONE_API_KEY")
+        if not pinecone_api_key:
+            raise ValueError("PINECONE_API_KEY environment variable is not set")
+        
+        try:
+            pc = Pinecone(api_key=pinecone_api_key)
+            self.index_name = "wiki-qa-index"
+            if self.index_name not in pc.list_indexes().names():
+                pc.create_index(
+                    name=self.index_name,
+                    dimension=768,  # 768 is the dimension for 'paraphrase-multilingual-mpnet-base-v2'
+                    metric='cosine'
+                )
+            self.index = pc.Index(self.index_name)
+        except PineconeConfigurationError as e:
+            raise ValueError(f"Pinecone initialization failed: {str(e)}")
         
 
     def load_dataset(self, dataset_name='wiki_qa', split='train', question_column='question', 
