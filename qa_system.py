@@ -40,7 +40,7 @@ class EnhancedQARAGSystem:
         self.active_learning_queue = []
 
         # Initialize Pinecone
-        pinecone_api_key = os.environ.get("PINECONE_API_KEY")
+        pinecone_api_key = os.environ.get("991cc472-840b-4957-ad66-209cd109e912")
         if not pinecone_api_key:
             raise ValueError("PINECONE_API_KEY environment variable is not set")
         
