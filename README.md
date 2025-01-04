@@ -72,12 +72,6 @@ wiki-qa-rag-system-streamlit/
 ├── README.md                    # Project documentation
 ├── requirement.txt              # Python dependencies
 
-
-
-
-
-
-
 ```
 ## Contributing
 
