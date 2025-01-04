@@ -14,19 +14,19 @@ This project implements a Multilingual Question Answering (QA) system using Retr
 - Model fine-tuning functionality
 - Pinecone integration for efficient vector search
 
-## Installation
+## **Installation**
 
-1. Clone this repository:
+Follow these steps to set up the Wiki QA RAG System:
 
-   git clone https://github.com/Ojaswa-Yadav/wiki-qa-rag-system-streamlit
-   
-2. Install the required dependencies:
+1. **Clone the Repository:**
 
+   ```bash
+   git clone https://github.com/Ojaswa-Yadav/wiki-qa-rag-system-streamlit.git
+   cd wiki-qa-rag-system-streamlit
    pip install -r requirements.txt
+   PINECONE_API_KEY=your_pinecone_api_key
+   streamlit run app.py
 
-3. Set up a Pinecone account and create an API key.
-
-4. Set the Pinecone API key as an environment variable
 
 ## Usage
 
@@ -59,6 +59,26 @@ This app is designed to be deployed on Streamlit Cloud. To deploy:
 
 5. **Fine-tuning**: Users can fine-tune the model on a subset of the Wiki QA dataset to improve its performance.
 
+
+Structure
+
+```bash
+wiki-qa-rag-system-streamlit/
+├── .streamlit/                  # Streamlit configuration files
+│   └── config.toml              # Streamlit configuration settings
+├── app.py                       # Main Streamlit application script
+├── qa_system.py                 # Core logic for the QA system
+├── .gitignore                   # Ignored files for Git
+├── README.md                    # Project documentation
+├── requirement.txt              # Python dependencies
+
+
+
+
+
+
+
+```
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
