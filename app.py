@@ -2,7 +2,7 @@ import streamlit as st
 import altair as alt
 import pandas as pd
 import numpy as np
-from qa_system_with_guardrails import EnhancedQARAGSystemWithGuardrails  # Use the version with guardrails
+from qa_system_with_guardrails import EnhancedQARAGSystemWithGuardrails
 
 # Streamlit page config
 st.set_page_config(layout="wide", page_title="Multilingual Wiki QA System with Guardrails")
@@ -50,8 +50,8 @@ def display_chat_message(content, is_user=False):
 @st.cache_resource
 def initialize_system():
     try:
-        system = EnhancedQARAGSystemWithGuardrails()  # Use the guardrails-enhanced version
-        num_docs = system.load_dataset(max_samples=10000)  # Limit to 10,000 documents
+        system = EnhancedQARAGSystemWithGuardrails()
+        num_docs = system.load_dataset(max_samples=10000)
         st.write(f"Loaded {num_docs} documents from Wiki QA dataset")
         return system
     except Exception as e:
@@ -74,23 +74,16 @@ def main():
     if st.button("Submit"):
         if system:
             with st.spinner("Processing query..."):
-                # Apply input guardrails
-                validated_query = system.validate_input(query)
-                if validated_query.startswith("["):
-                    st.error(f"Input Error: {validated_query}")
-                    return
+                result = system.process_query(query)
 
-                result = system.process_query(validated_query)
+                if result.get("error"):
+                    st.error(result["error"])
+                    return
 
                 st.subheader("Results")
                 st.write(f"Query: {result['query']}")
-
-                # Apply output guardrails to answers
-                extracted_answer = system.validate_output(result['extracted_answer'])
-                generated_answer = system.validate_output(result['generated_answer'])
-
-                st.write(f"Extracted Answer: {extracted_answer}")
-                st.write(f"Generated Answer: {generated_answer}")
+                st.write(f"Extracted Answer: {result['extracted_answer']}")
+                st.write(f"Generated Answer: {result['generated_answer']}")
                 
                 st.subheader("Relevant Documents")
                 for i, (doc, score) in enumerate(result['relevant_documents'], 1):
@@ -102,6 +95,7 @@ def main():
     st.header("System Evaluation")
     st.write("Evaluate using Wiki QA dataset:")
     num_eval_samples = st.number_input("Number of random samples for evaluation", min_value=1, max_value=100, value=10)
+    num_eval_samples = min(num_eval_samples, len(system.questions))
 
     if st.button("Evaluate"):
         if system:
@@ -128,7 +122,7 @@ def main():
                     st.write(f"Extracted Answer: {sample['extracted_answer']}")
                     st.write(f"Generated Answer: {sample['generated_answer']}")
                     st.write(f"Confidence: {sample['confidence']:.2f}")
-                    if st.button(f"Improve Model for Sample {i}"):
+                    if st.button(f"Improve Model for Sample {i}", key=f"improve_sample_{i}"):
                         st.write("Model improvement logic would be implemented here.")
             else:
                 st.write("No active learning samples available at the moment.")
@@ -148,10 +142,12 @@ def main():
                 eval_indices = np.random.choice(len(system.questions), num_eval, replace=False)
                 
                 train_dataset = {
-                    "input_text": [f"Question: {system.questions[i]} Context: {system.documents[i]}" for i in train_indices]
+                    "input_text": [f"Question: {system.questions[i]} Context: {system.documents[i]}" for i in train_indices],
+                    "labels": [system.documents[i] for i in train_indices],
                 }
                 eval_dataset = {
-                    "input_text": [f"Question: {system.questions[i]} Context: {system.documents[i]}" for i in eval_indices]
+                    "input_text": [f"Question: {system.questions[i]} Context: {system.documents[i]}" for i in eval_indices],
+                    "labels": [system.documents[i] for i in eval_indices],
                 }
                 
                 system.fine_tune(train_dataset, eval_dataset)
