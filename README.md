@@ -31,7 +31,20 @@ Follow these steps to set up the Wiki QA RAG System:
 
 ## Usage
 
-Run the Streamlit app locally:
+Run Locally:
+
+```bash
+streamlit run app.py
+```
+Interact with the App:
+
+Explore the dataset.
+
+Ask multilingual questions.
+
+Evaluate the system’s performance.
+
+Fine-tune the model on custom data.
 
 streamlit run app.py
 
