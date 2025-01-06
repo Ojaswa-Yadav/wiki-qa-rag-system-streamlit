@@ -46,7 +46,6 @@ Evaluate the system’s performance.
 
 Fine-tune the model on custom data.
 
-streamlit run app.py
 
 ## Deployment
 
