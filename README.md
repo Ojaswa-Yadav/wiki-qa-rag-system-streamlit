@@ -13,6 +13,7 @@ This project implements a Multilingual Question Answering (QA) system using Retr
 - Active learning capabilities for continuous improvement
 - Model fine-tuning functionality
 - Pinecone integration for efficient vector search
+- Guardrails Integration to ensure appropriate interactions.
 
 ## **Installation**
 
@@ -58,6 +59,9 @@ This app is designed to be deployed on Streamlit Cloud. To deploy:
 4. **Active Learning**: The system identifies challenging questions and stores them for potential model improvement.
 
 5. **Fine-tuning**: Users can fine-tune the model on a subset of the Wiki QA dataset to improve its performance.
+   
+6. **Guardrails**: Removes offensive or unsuitable language from user queries and system responses, prevents harmful instructions or unauthorized commands from affecting the system, flags topics such as politics, violence, and hate speech to ensure safe interactions, and replaces inappropriate or offensive content with censored messages.
+
 
 
 Structure
@@ -68,6 +72,7 @@ wiki-qa-rag-system-streamlit/
 │   └── config.toml              # Streamlit configuration settings
 ├── app.py                       # Main Streamlit application script
 ├── qa_system.py                 # Core logic for the QA system
+├── guardrails.py                # Core logic for implementing guardrails
 ├── .gitignore                   # Ignored files for Git
 ├── README.md                    # Project documentation
 ├── requirement.txt              # Python dependencies
