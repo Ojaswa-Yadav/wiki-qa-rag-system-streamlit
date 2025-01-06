@@ -16,74 +16,33 @@ from langdetect import detect
 from scipy.spatial.distance import cosine
 import pinecone
 from transformers import AutoTokenizer, AutoModelForQuestionAnswering, M2M100ForConditionalGeneration, M2M100Tokenizer, TrainingArguments, Trainer
-
+from guardrails import Guardrails 
 nltk.download('punkt', quiet=True)
+
+
 
 
 class EnhancedQARAGSystemWithGuardrails(EnhancedQARAGSystem):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Define offensive words and sensitive topics for validation
-        self.offensive_words = ["badword1", "badword2", "hack", "bypass"]
-        self.sensitive_topics = ["politics", "violence", "hate speech"]
+        self.guardrails = Guardrails()
+        self.sbert_model = SentenceTransformer("paraphrase-multilingual-mpnet-base-v2")
+        self.qa_tokenizer = AutoTokenizer.from_pretrained("deepset/xlm-roberta-large-squad2")
+        self.qa_model = AutoModelForQuestionAnswering.from_pretrained("deepset/xlm-roberta-large-squad2")
+        self.lm_tokenizer = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M")
+        self.lm_model = M2M100ForConditionalGeneration.from_pretrained("facebook/m2m100_418M")
+        self.scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
+        self.active_learning_queue = []
+        pinecone.init(api_key=os.getenv("PINECONE_API_KEY"), environment="us-west1-gcp")
+        self.index = pinecone.Index("qa-index")
 
-    # Guardrail: Inappropriate Content Filter
-    def inappropriate_content_filter(self, text):
-        """Filters input for inappropriate or offensive content."""
-        if any(word in text.lower() for word in self.offensive_words):
-            return "[Content removed due to inappropriate language]"
-        return text
-
-    # Guardrail: Prompt Injection Shield
-    def prompt_injection_shield(self, text):
-        """Protects against malicious or harmful instructions."""
-        forbidden_phrases = ["delete all data", "bypass security", "unauthorized access"]
-        if any(phrase in text.lower() for phrase in forbidden_phrases):
-            return "[Prompt rejected due to security risks]"
-        return text
-
-    # Guardrail: Offensive Language Filter
-    def offensive_language_filter(self, text):
-        """Filters offensive or disrespectful content in responses."""
-        pattern = re.compile(r'\b(?:' + '|'.join(self.offensive_words) + r')\b', re.IGNORECASE)
-        filtered_text = pattern.sub("[censored]", text)
-        return filtered_text
-
-    # Guardrail: Sensitive Content Scanner
-    def sensitive_content_scanner(self, text):
-        """Detects sensitive topics and flags them."""
-        if any(topic in text.lower() for topic in self.sensitive_topics):
-            return "[Content flagged due to sensitive topics]"
-        return text
-
-    # Unified Input Validation Guardrail
-    def validate_input(self, text):
-        """Validates input through all input guardrails."""
-        text = self.inappropriate_content_filter(text)
-        text = self.prompt_injection_shield(text)
-        return text
-
-    # Unified Output Validation Guardrail
-    def validate_output(self, text):
-        """Validates output through all output guardrails."""
-        text = self.offensive_language_filter(text)
-        text = self.sensitive_content_scanner(text)
-        return text
-
-    # Override process_query to integrate guardrails
     def process_query(self, query, num_relevant_docs=3):
-        """
-        Processes a user query, applies guardrails, and retrieves answers.
-        """
         try:
-            # Step 1: Validate the input query
-            validated_query = self.validate_input(query)
+            validated_query = self.guardrails.validate_input(query)
             if validated_query.startswith("["):
                 return {"query": query, "error": validated_query}
 
-            # Step 2: Process the query with the original model logic
             query_lang = self.detect_language(validated_query)
-            english_query = self.translate(validated_query, 'en')
+            english_query = self.translate(validated_query, "en")
 
             relevant_docs = self.semantic_search(english_query, k=num_relevant_docs)
             context = " ".join([doc for doc, _ in relevant_docs])
@@ -91,37 +50,63 @@ class EnhancedQARAGSystemWithGuardrails(EnhancedQARAGSystem):
             extracted_answer = self.extract_answer(english_query, context)
             generated_answer = self.generate_answer(english_query, context)
 
-            # Step 3: Validate the outputs
-            extracted_answer = self.validate_output(extracted_answer)
-            generated_answer = self.validate_output(generated_answer)
+            extracted_answer = self.guardrails.validate_output(extracted_answer)
+            generated_answer = self.guardrails.validate_output(generated_answer)
 
-            # Step 4: Translate back to the original language
             extracted_answer_translated = self.translate(extracted_answer, query_lang)
             generated_answer_translated = self.translate(generated_answer, query_lang)
 
-            # Step 5: Calculate confidence
             confidence = self.calculate_confidence(extracted_answer, generated_answer)
 
-            # Step 6: Add low-confidence responses to active learning queue
             if confidence < 0.5:
                 self.active_learning_queue.append({
-                    'query': query,
-                    'extracted_answer': extracted_answer,
-                    'generated_answer': generated_answer,
-                    'confidence': confidence
+                    "query": query,
+                    "extracted_answer": extracted_answer,
+                    "generated_answer": generated_answer,
+                    "confidence": confidence,
                 })
 
-            # Step 7: Return results
             return {
                 "query": query,
                 "relevant_documents": relevant_docs,
                 "extracted_answer": extracted_answer_translated,
                 "generated_answer": generated_answer_translated,
-                "confidence": confidence
+                "confidence": confidence,
             }
         except Exception as e:
             logging.error(f"Error processing query: {str(e)}")
             return {"query": query, "error": "Unable to process query"}
+
+    def semantic_search(self, query, k=5):
+        query_embedding = self.sbert_model.encode(query)
+        results = self.index.query(query_embedding.tolist(), top_k=k, include_metadata=True)
+        return [(match["metadata"]["text"], match["score"]) for match in results["matches"]]
+
+    def extract_answer(self, question, context):
+        inputs = self.qa_tokenizer.encode_plus(question, context, return_tensors="pt", max_length=512, truncation=True)
+        outputs = self.qa_model(**inputs)
+        start = torch.argmax(outputs.start_logits)
+        end = torch.argmax(outputs.end_logits) + 1
+        return self.qa_tokenizer.decode(inputs["input_ids"][0][start:end], skip_special_tokens=True)
+
+    def generate_answer(self, question, context):
+        input_text = f"Question: {question}\nContext: {context}\nAnswer:"
+        inputs = self.lm_tokenizer(input_text, return_tensors="pt")
+        outputs = self.lm_model.generate(**inputs, max_length=512, num_beams=3, early_stopping=True)
+        return self.lm_tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+    def translate(self, text, target_lang):
+        source_lang = self.detect_language(text)
+        if source_lang == target_lang:
+            return text
+        self.lm_tokenizer.src_lang = source_lang
+        encoded = self.lm_tokenizer(text, return_tensors="pt")
+        generated_tokens = self.lm_model.generate(**encoded, forced_bos_token_id=self.lm_tokenizer.get_lang_id(target_lang))
+        return self.lm_tokenizer.decode(generated_tokens[0], skip_special_tokens=True)
+
+    def detect_language(self, text):
+        return detect(text)
+
 
 
     def calculate_confidence(self, extracted_answer, generated_answer):
@@ -170,45 +155,34 @@ class EnhancedQARAGSystemWithGuardrails(EnhancedQARAGSystem):
 
 
     def fine_tune(self, train_dataset, eval_dataset, output_dir="./fine_tuned_model", num_epochs=3):
-    """
-    Fine-tunes the language model using a training and evaluation dataset.
-    
-    Args:
-        train_dataset (dict): Dictionary with 'input_text' and optionally 'labels' for training.
-        eval_dataset (dict): Dictionary with 'input_text' and optionally 'labels' for evaluation.
-        output_dir (str): Directory where the fine-tuned model will be saved.
-        num_epochs (int): Number of training epochs.
-    """
-    # Tokenize the datasets
-    train_encodings = self.lm_tokenizer(train_dataset["input_text"], truncation=True, padding=True, return_tensors="pt")
-    train_labels = self.lm_tokenizer(train_dataset.get("labels", [""]), truncation=True, padding=True, return_tensors="pt")
-    eval_encodings = self.lm_tokenizer(eval_dataset["input_text"], truncation=True, padding=True, return_tensors="pt")
-    eval_labels = self.lm_tokenizer(eval_dataset.get("labels", [""]), truncation=True, padding=True, return_tensors="pt")
-
-    # Convert datasets to PyTorch Tensors
-    train_dataset = torch.utils.data.TensorDataset(
-        train_encodings["input_ids"], train_encodings["attention_mask"], train_labels["input_ids"]
-    )
-    eval_dataset = torch.utils.data.TensorDataset(
-        eval_encodings["input_ids"], eval_encodings["attention_mask"], eval_labels["input_ids"]
-    )
-
-    # Define training arguments
-    training_args = TrainingArguments(
-        output_dir=output_dir,
-        num_train_epochs=num_epochs,
-        per_device_train_batch_size=4,
-        per_device_eval_batch_size=4,
-        warmup_steps=100,
-        weight_decay=0.01,
-        logging_dir='./logs',
-        logging_steps=10,
-        evaluation_strategy="steps",
-        eval_steps=50,
-        save_steps=50,
-        save_total_limit=2,
-        load_best_model_at_end=True,
-    )
+        # Tokenize the datasets
+        train_encodings = self.lm_tokenizer(train_dataset["input_text"], truncation=True, padding=True, return_tensors="pt")
+        train_labels = self.lm_tokenizer(train_dataset.get("labels", [""]), truncation=True, padding=True, return_tensors="pt")
+        eval_encodings = self.lm_tokenizer(eval_dataset["input_text"], truncation=True, padding=True, return_tensors="pt")
+        eval_labels = self.lm_tokenizer(eval_dataset.get("labels", [""]), truncation=True, padding=True, return_tensors="pt")
+        # Convert datasets to PyTorch Tensors
+        train_dataset = torch.utils.data.TensorDataset(
+            train_encodings["input_ids"], train_encodings["attention_mask"], train_labels["input_ids"]
+        )
+        eval_dataset = torch.utils.data.TensorDataset(
+            eval_encodings["input_ids"], eval_encodings["attention_mask"], eval_labels["input_ids"]
+        )
+        # Define training arguments
+        training_args = TrainingArguments(
+            output_dir=output_dir,
+            num_train_epochs=num_epochs,
+            per_device_train_batch_size=4,
+            per_device_eval_batch_size=4,
+            warmup_steps=100,
+            weight_decay=0.01,
+            logging_dir='./logs',
+            logging_steps=10,
+            evaluation_strategy="steps",
+            eval_steps=50,
+            save_steps=50,
+            save_total_limit=2,
+            load_best_model_at_end=True,
+        )
 
     # Define the metric computation function
     def compute_metrics(eval_pred):
