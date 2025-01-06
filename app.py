@@ -2,10 +2,10 @@ import streamlit as st
 import altair as alt
 import pandas as pd
 import numpy as np
-from qa_system import EnhancedQARAGSystem
+from qa_system_with_guardrails import EnhancedQARAGSystemWithGuardrails  # Use the version with guardrails
 
 # Streamlit page config
-st.set_page_config(layout="wide", page_title="Multilingual Wiki QA System")
+st.set_page_config(layout="wide", page_title="Multilingual Wiki QA System with Guardrails")
 
 # Custom CSS for chat-like interface
 st.markdown("""
@@ -50,7 +50,7 @@ def display_chat_message(content, is_user=False):
 @st.cache_resource
 def initialize_system():
     try:
-        system = EnhancedQARAGSystem()
+        system = EnhancedQARAGSystemWithGuardrails()  # Use the guardrails-enhanced version
         num_docs = system.load_dataset(max_samples=10000)  # Limit to 10,000 documents
         st.write(f"Loaded {num_docs} documents from Wiki QA dataset")
         return system
@@ -62,7 +62,7 @@ def initialize_system():
 system = initialize_system()
 
 def main():
-    st.title("Multilingual Wiki QA System with Active Learning")
+    st.title("Multilingual Wiki QA System with Guardrails and Active Learning")
 
     if system is None:
         st.error("System initialization failed. Please check your configuration and try again.")
@@ -74,16 +74,27 @@ def main():
     if st.button("Submit"):
         if system:
             with st.spinner("Processing query..."):
-                result = system.process_query(query)
-            
-            st.subheader("Results")
-            st.write(f"Query: {result['query']}")
-            st.write(f"Extracted Answer: {result['extracted_answer']}")
-            st.write(f"Generated Answer: {result['generated_answer']}")
-            
-            st.subheader("Relevant Documents")
-            for i, (doc, score) in enumerate(result['relevant_documents'], 1):
-                st.write(f"{i}. {doc[:100]}... (Score: {score:.4f})")
+                # Apply input guardrails
+                validated_query = system.validate_input(query)
+                if validated_query.startswith("["):
+                    st.error(f"Input Error: {validated_query}")
+                    return
+
+                result = system.process_query(validated_query)
+
+                st.subheader("Results")
+                st.write(f"Query: {result['query']}")
+
+                # Apply output guardrails to answers
+                extracted_answer = system.validate_output(result['extracted_answer'])
+                generated_answer = system.validate_output(result['generated_answer'])
+
+                st.write(f"Extracted Answer: {extracted_answer}")
+                st.write(f"Generated Answer: {generated_answer}")
+                
+                st.subheader("Relevant Documents")
+                for i, (doc, score) in enumerate(result['relevant_documents'], 1):
+                    st.write(f"{i}. {doc[:100]}... (Score: {score:.4f})")
         else:
             st.error("System is not initialized. Cannot process query.")
 
